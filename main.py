@@ -1,13 +1,15 @@
+#In the name of God##
 import torch
-from exp.exp_main import Exp_Main
 import random
 import numpy as np
+from run import go_model
 from utils.tools import dotdict
 
 
 fix_seed = 2022
 random.seed(fix_seed)
 torch.manual_seed(fix_seed)
+
 np.random.seed(fix_seed)
 
 args = dotdict()
@@ -26,12 +28,13 @@ args.verbose = 1                      #  hint:  Whether to print inter-epoch los
 args.data = 'Market'                                              # hint: dataset type, Wind or WindGraph
 args.root_path = 'MarketDataset/dataset/'          # hint:  root path of the data file
 args.data_path = 'data.csv'                                # hint:  data file
-args.target = 'KVITEBJØRNFELTET'                                # hint:  optional target station for non-graph models
+args.target = 'Close'                                # hint:  optional target station for non-graph models
+args.scale = True
 args.freq = 'b'                                                 # hint:  freq for time features encoding:
 #                                                                      options: [ s:secondly, t:minutely, h:hourly, 
 #                                                                      options:   d:daily, b:business days, w:weekly, m:monthly]
 #                                                                      options:   You can also use more detailed freq like 15min or 3h
-args.checkpoints = 'MarketDataset/dataset/checkpoints/'                             # hint: location of model checkpoints
+args.checkpoints = 'checkpoints/'                             # hint: location of model checkpoints
 args.checkpoint_flag = 1                                        # hint: Whether to checkpoint or not
 args.n_closest = None                                           # hint: number of closest nodes for graph connectivity, None --> complete graph
 args.all_stations = 0                                           # hint: Whether to use all stations or just target for non-spatial models
@@ -100,65 +103,4 @@ args.criteria = 'default'               # hint: kind of measure for selecting cr
 args.kind_of_optim = 'default'          # hint: kind of optimizer to use, default is Adam
 args.kind_of_scale = 'MinMax'
 
-if args.features == 'S':
-    assert (np.array([args.c_out, args.enc_in, args.dec_in]) == 1).all(), "c_out, enc_in and dec_in should be 1 for univariate"
-
-args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
-
-if args.use_gpu and args.use_multi_gpu:
-    args.devices = args.devices.replace(' ', '')
-    device_ids = args.devices.split(',')
-    args.device_ids = [int(id_) for id_ in device_ids]
-    args.gpu = args.device_ids[0]
-
-
-
-Exp = Exp_Main
-
-def go_model(args, Exp):
-    
-    print('Args in experiment:')
-    print(args)
-    if args.is_training:
-        
-        for ii in range(args.itr):
-            # setting record of experiments
-            setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_{}'.format(
-                args.model_id,
-                args.model,
-                args.data,
-                args.features,
-                args.seq_len,
-                args.label_len,
-                args.pred_len,
-                ii)
-            
-            exp = Exp(args)  # set experiments
-            print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
-            exp.train(setting)
-            
-            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-            exp.test(setting, base_dir=args.test_dir)
-            
-            torch.cuda.empty_cache()
-    else:
-        
-        ii = 0
-        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_{}'.format(
-            args.model_id,
-            args.model,
-            args.data,
-            args.features,
-            args.seq_len,
-            args.label_len,
-            args.pred_len,
-            ii)
-        
-        exp = Exp(args)  # set experiments
-        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
-        exp.test(setting, test=1)
-        torch.cuda.empty_cache()
-
-
-if __name__ == "__main__":
-    go_model(args, Exp)
+go_model(args)

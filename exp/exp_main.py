@@ -23,10 +23,10 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 
-print('                                  Welcome')
-time.sleep(1)
-print( ' FFTransformer, Transformer family, LSTM and MLP for Time-Series Forecasting ')
-time.sleep(1)
+#print('                                  Welcome')
+#time.sleep(1)
+#print( ' FFTransformer, Transformer family, LSTM and MLP for Time-Series Forecasting ')
+#time.sleep(1)
 print( '   This is the revised version of the original code, developed in 2024. ')
 
 
@@ -551,9 +551,10 @@ class Exp_Main(Exp_Basic):
                 os.makedirs(folder_path)
 
         mae, mse, rmse, mape, mspe = metric(preds, trues)
-
-        preds_un = test_data.inverse_transform(preds)
-        trues_un = test_data.inverse_transform(trues)
+        preds_reshaped = preds.squeeze()
+        trues_reshaped = trues.squeeze()
+        preds_un = test_data.inverse_transform(preds_reshaped.reshape((-1,1)))
+        trues_un = test_data.inverse_transform(trues_reshaped.reshape((-1,1)))
         mae_un, mse_un, rmse_un, mape_un, mspe_un = metric(preds_un, trues_un)
 
         losses = {
