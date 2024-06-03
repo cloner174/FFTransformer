@@ -1,0 +1,165 @@
+import torch
+from exp.exp_main import Exp_Main
+import random
+import numpy as np
+from utils.tools import dotdict
+
+
+fix_seed = 2022
+random.seed(fix_seed)
+torch.manual_seed(fix_seed)
+np.random.seed(fix_seed)
+
+args = dotdict()
+
+# basic config
+args.is_training = 1                  #  hint: status
+args.model_id = 'test'                #  hint: model id for saving
+args.model = 'FFTransformer'          #  hint: model name, options: FFTransformer, Autoformer, LSTM, MLP, Informer,
+#                                                          options: Transformer, LogSparse, persistence
+#                                                          And same with GraphXxxx, like: GraphTransformer, GraphLSTM, and ..
+args.plot_flag  =  1                  #  hint:  Whether to save loss plots or not
+args.test_dir = ''                    #  hint:  Base dir to save test results
+args.verbose = 1                      #  hint:  Whether to print inter-epoch losses
+
+# data loader
+args.data = 'Market'                                              # hint: dataset type, Wind or WindGraph
+args.root_path = '/WindData/dataset/'          # hint:  root path of the data file
+args.data_path = 'wind_data.csv'                                # hint:  data file
+args.target = 'KVITEBJØRNFELTET'                                # hint:  optional target station for non-graph models
+args.freq = 'b'                                                 # hint:  freq for time features encoding:
+#                                                                      options: [ s:secondly, t:minutely, h:hourly, 
+#                                                                      options:   d:daily, b:business days, w:weekly, m:monthly]
+#                                                                      options:   You can also use more detailed freq like 15min or 3h
+args.checkpoints = './checkpoints/'                             # hint: location of model checkpoints
+args.checkpoint_flag = 1                                        # hint: Whether to checkpoint or not
+args.n_closest = None                                           # hint: number of closest nodes for graph connectivity, None --> complete graph
+args.all_stations = 0                                           # hint: Whether to use all stations or just target for non-spatial models
+args.data_step = 1                                              # hint: Only use every nth point. Set data_step  =  1 for full dataset
+args.min_num_nodes = 2                                          # hint: Minimum number of nodes in a graph
+
+# forecasting task
+args.features = 'M'          # hint:  forecasting task, options:[M, S]; M:multivariate input, S:univariate input
+args.seq_len = 64            # hint: input sequence length
+args.label_len = 48          # hint: start token length. Note that Graph models only use label_len and pred_len
+args.pred_len = 6            # hint: prediction sequence length
+args.enc_in = 8              # hint: Number of encoder input features
+args.dec_in = 8              # hint: Number of decoder input features
+args.c_out = 1               # hint: output size, note that it is assumed that the target features are placed last
+
+# model define
+args.d_model = 512                           # hint: dimension of model
+args.n_heads = 8                             # hint: num of heads
+args.e_layers = 2                            # hint: number of encoder layers for non-spatial and number of LSTM or MLP layers for GraphLSTM and GraphMLP
+args.d_layers = 1                            # hint: num of decoder layers
+args.gnn_layers = 2                          # hint: Number of sequential graph blocks in GNN
+args.d_ff = 2048                             # hint: dimension of fcn
+args.moving_avg = 25                         # hint: window size of moving average for Autoformer
+args.factor = 3                              # hint: attn factor
+args.distil = True                           # hint: whether to use distilling in encoder, using this argument means not using distilling, not used for GNN models
+args.dropout = 0.05                          # hint: dropout
+args.embed = 'timeF'                         # hint = time features encoding, options:[timeF, fixed, learned]
+args.activation = 'gelu'                     # hint:  activation
+args.output_attention  =  False              # hint = whether to output attention in ecoder, action:store_true
+args.win_len = 6                             # hint: Local attention length for LogSparse Transformer
+args.res_len = None                          # hint: Restart attention length for LogSparse Transformer
+args.qk_ker = 4                              # hint: Key/Query convolution kernel length for LogSparse Transformer
+args.v_conv = 0                              # hint: Weather to apply ConvAttn for values (in addition to K/Q for LogSparseAttn)
+args.sparse_flag = 1                         # hint: Weather to apply logsparse mask for LogSparse Transformer
+args.top_keys = 0                            # hint: Weather to find top keys instead of queries in Informer
+args.kernel_size = 3                         # hint: Kernel size for the 1DConv value embedding
+args.train_strat_lstm = 'recursive'          # hint: The training strategy to use for the LSTM model. recursive or mixed_teacher_forcing
+args.norm_out = 1                            # hint: Whether to apply laynorm to outputs of Enc or Dec in FFTransformer
+args.num_decomp = 4                          # hint: Number of wavelet decompositions for FFTransformer
+args.mlp_out = 0                             # hint: Whether to apply MLP to GNN outputs
+
+# Optimization
+args.num_workers = 0                  # hint: data loader num workers')
+args.itr = 1                          # hint: experiments times')
+args.train_epochs = 10                # hint: train epochs')
+args.batch_size = 32                  # hint: batch size of train input data')
+args.patience = 5                     # hint: early stopping patience')
+args.learning_rate  =  0.001          # hint: optimizer learning rate')
+args.lr_decay_rate  =  0.8            # hint: Rate for which to decay lr with')
+args.des = 'test'                     # hint:  'exp description')
+args.loss = 'mse'                     # hint:  'loss function')
+args.lradj = 'type1'                  # hint:  'adjust learning rate')
+
+# GPU
+args.use_gpu  =  True          # hint: use gpu
+args.gpu  =  0                 # hint: gpu
+
+# multi-gpu is not fully developed yet and still experimental for graph data.
+args.use_multi_gpu = False          # hint: should use multiple gpus ? , action: store_true, 
+args.devices = '0,1,2,3'            # hint: device ids of multiple gpus
+
+
+# added options
+args.criteria = 'default'               # hint: kind of measure for selecting criterion, options: 'SmoothL1', 'Huber', 'L1'
+#                                            default is -> MSE   !  Cation! THe VaLUe FoR thIS PArT is CASE-SENSITIVE !
+args.kind_of_optim = 'default'          # hint: kind of optimizer to use, default is Adam
+args.name_of_col_with_date = 'date'
+args.kind_of_scale = 'MinMax'
+args.test_size = 0.2
+
+if args.features == 'S':
+    assert (np.array([args.c_out, args.enc_in, args.dec_in]) == 1).all(), "c_out, enc_in and dec_in should be 1 for univariate"
+
+args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
+
+if args.use_gpu and args.use_multi_gpu:
+    args.devices = args.devices.replace(' ', '')
+    device_ids = args.devices.split(',')
+    args.device_ids = [int(id_) for id_ in device_ids]
+    args.gpu = args.device_ids[0]
+
+print('Args in experiment:')
+print(args)
+
+Exp = Exp_Main
+
+def go_model(args, Exp):
+    
+    if args.is_training:
+        
+        for ii in range(args.itr):
+            # setting record of experiments
+            setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_{}'.format(
+                args.model_id,
+                args.model,
+                args.data,
+                args.features,
+                args.seq_len,
+                args.label_len,
+                args.pred_len,
+                ii)
+            
+            exp = Exp(args)  # set experiments
+            print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
+            exp.train(setting)
+            
+            print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+            exp.test(setting, base_dir=args.test_dir)
+            
+            torch.cuda.empty_cache()
+    else:
+        
+        ii = 0
+        setting = '{}_{}_{}_ft{}_sl{}_ll{}_pl{}_{}'.format(
+            args.model_id,
+            args.model,
+            args.data,
+            args.features,
+            args.seq_len,
+            args.label_len,
+            args.pred_len,
+            ii)
+        
+        exp = Exp(args)  # set experiments
+        print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
+        exp.test(setting, test=1)
+        torch.cuda.empty_cache()
+
+
+if __name__ == "__main__":
+    go_model(args, Exp)

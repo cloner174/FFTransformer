@@ -1,10 +1,11 @@
 from torch.utils.data import DataLoader
-from data_provider.data_loader import Dataset_wind_data, Dataset_wind_data_graph, collate_graph
+from data_provider.data_loader import Dataset_wind_data, Dataset_wind_data_graph, collate_graph, Dataset_market
 
 
 data_dict = {
     'Wind': Dataset_wind_data,
-    'WindGraph': Dataset_wind_data_graph
+    'WindGraph': Dataset_wind_data_graph,
+    'Market': Dataset_market
 }
 
 
@@ -27,6 +28,8 @@ def data_provider(args, flag):
         root_path=args.root_path,
         data_path=args.data_path,
         flag=flag,
+        scale = args.scale,
+        kind_of_scaler = args.kind_of_scaler,
         size=[args.seq_len, args.label_len, args.pred_len],
         features=args.features,
         target=args.target,

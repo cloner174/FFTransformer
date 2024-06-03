@@ -6,8 +6,139 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from utils.timefeatures import time_features
 import warnings
 import torch
+import joblib
 
 warnings.filterwarnings('ignore')
+
+class Dataset_market(Dataset):
+    
+    
+    def __init__(self, root_path, flag='train', size=None, features='S', data_path='data.csv',
+                 target='Close', scale=True, kind_of_scaler='Standard', timeenc=0, freq='b', data_step=1, **_):
+        
+        self.seq_len = size[0]          # Sequence length
+        self.label_len = size[1]        # Label length
+        self.pred_len = size[2]         # Prediction length
+        self.total_seq_len = self.seq_len + self.pred_len
+        assert self.label_len <= self.seq_len
+        
+        # init
+        assert flag in ['train', 'test', 'val']
+        type_map = {'train': 0, 'val': 1, 'test': 2}
+        self.set_type = type_map[flag]
+        self.flag = flag
+        self.data_step = data_step    # Only use every data_step'th point. Set data_step = 1 for full dataset.
+        self.features = features
+        self.target = target        # feature want to predict
+        self.scale = scale
+        self.kind_of_scaler = kind_of_scaler
+        self.timeenc = timeenc
+        self.freq = freq
+        self.root_path = root_path
+        self.data_path = data_path
+        
+        self.__read_data__()
+    
+    
+    def __read_data__(self):
+        
+        _path = os.path.join(self.root_path, self.flag, self.data_path).replace('\\', '/')  # replace in case windows
+        df_raw = pd.read_csv(_path)
+        if self.features == 'M' or self.features == 'MS':
+            cols_data = df_raw.columns[df_raw.columns != 'date']
+            df_data = df_raw[cols_data]
+        elif self.features == 'S':
+            df_data = df_raw[[self.target]]
+        border1s = [0]  # start of training data
+        border2s = [int(len(df_raw) * 0.8)]  # end of training data, typically 80% for training
+        if self.scale:
+            if self.features == 'S' or self.features == 'MS':
+                col_scaled = []
+                for col in df_data.columns:
+                    col_data = df_data[[col]].values
+                    if self.kind_of_scaler == 'MinMax':
+                        if col == self.target:
+                            self.scaler = MinMaxScaler()
+                        else:
+                            scaler = MinMaxScaler()
+                    else:
+                        if col == self.target:
+                            self.scaler = StandardScaler()
+                        else:
+                            scaler = StandardScaler()
+                    if col == self.target:
+                        self.scaler.fit(col_data[border1s[0]:border2s[0]])
+                        joblib.dump(self.scaler, os.path.join(self.root_path, 'scaler.pkl'))
+                        col_temp = self.scaler.transform(col_data)
+                    else:
+                        scaler.fit(col_data[border1s[0]:border2s[0]])
+                        col_temp = scaler.transform(col_data)
+                    col_scaled.append(col_temp)
+                if len(col_scaled) == 1:
+                    data = col_scaled[0]
+                else:
+                    data = np.concatenate(col_scaled, axis=1)
+            else:
+                if self.kind_of_scaler == 'MinMax':
+                    self.scaler = MinMaxScaler()
+                else:
+                    self.scaler = StandardScaler()
+                train_data = df_data[border1s[0]:border2s[0]]
+                self.scaler.fit(train_data.values)
+                data = self.scaler.transform(df_data.values)
+        else:
+            data = df_data.values
+        # Find missing entries to then decide on valid sequences (which don't contain NaNs)
+        nan_indxs = np.where(np.isnan(data).any(axis=1))[0]
+        nan_indxs = np.unique(np.concatenate([np.array([0]), nan_indxs, np.array([data.shape[0] - 1])]))
+        # Find the slices which result in valid sequences without NaNs
+        valid_slices = np.where((nan_indxs[1:] - nan_indxs[:-1] - 1) >= self.total_seq_len)[0]
+        valid_slices = np.vstack([nan_indxs[valid_slices] + 1, nan_indxs[valid_slices + 1] - 1]).T
+        # Now, construct an array which contains the valid start indices for the different sequences
+        data_indxs = np.zeros(data.shape[0] - self.total_seq_len + 1, dtype='bool')
+        for s, e in valid_slices:
+            indxs_i = np.arange(s, e - self.total_seq_len + 2, 1)
+            data_indxs[indxs_i] = True
+        self.data_indxs = np.where(data_indxs)[0]
+        self.data_indxs = self.data_indxs[::self.data_step]
+        # Construct time array
+        df_raw['date'] = pd.to_datetime(df_raw['date'])
+        df_stamp = df_raw[['date']]
+        if self.timeenc == 0:
+            df_stamp['month'] = df_stamp.date.apply(lambda row: row.month)
+            df_stamp['day'] = df_stamp.date.apply(lambda row: row.day)
+            df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday())
+            df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour)
+            data_stamp = df_stamp.drop(['date'], axis=1).values
+        elif self.timeenc == 1:
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+            data_stamp = data_stamp.transpose(1, 0)
+        else:
+            raise ValueError("Pass timeenc as either 0 or 1")
+        
+        self.data_x = data      # full dataset
+        self.data_stamp = data_stamp    # full time dataset
+    
+    
+    def __getitem__(self, index):
+        
+        s_begin = self.data_indxs[index]
+        s_end = s_begin + self.seq_len
+        r_begin = s_end - self.label_len
+        r_end = s_end + self.pred_len
+        seq_x = self.data_x[s_begin:s_end]
+        seq_y = self.data_x[r_begin:r_end]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+        return seq_x, seq_y, seq_x_mark, seq_y_mark
+    
+    def __len__(self):
+        return len(self.data_indxs)
+    
+    # [seq, feats]
+    def inverse_transform(self, data):
+        return self.scaler.inverse_transform(data)
+
 
 
 class Dataset_wind_data(Dataset):

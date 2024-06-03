@@ -23,6 +23,12 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 
+print('                                  Welcome')
+time.sleep(1)
+print( ' FFTransformer, Transformer family, LSTM and MLP for Time-Series Forecasting ')
+time.sleep(1)
+print( '   This is the revised version of the original code, developed in 2024. ')
+
 
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
@@ -64,11 +70,41 @@ class Exp_Main(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+        if self.args.kind_of_optim == 'AdamW':
+            model_optim = optim.AdamW(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'SparseAdam':
+            model_optim = optim.SparseAdam(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'SGD':
+            model_optim = optim.SGD(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'RMSprop':
+            model_optim = optim.RMSprop(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'RAdam':
+            model_optim = optim.RAdam(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'NAdam':
+            model_optim = optim.NAdam(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'LBFGS':
+            model_optim = optim.LBFGS(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'Adamax':
+            model_optim = optim.Adamax(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'ASGD':
+            model_optim = optim.ASGD(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'Adadelta':
+            model_optim = optim.Adadelta(self.model.parameters(), lr=self.args.learning_rate)
+        elif self.args.kind_of_optim == 'Adagrad':
+            model_optim = optim.Adagrad(self.model.parameters(), lr=self.args.learning_rate)
+        else:
+            model_optim = optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
         return model_optim
-
+    
     def _select_criterion(self):
-        criterion = nn.MSELoss()
+        if self.args.criteria == 'L1':
+            criterion = nn.L1Loss()
+        elif self.args.criteria == 'SmoothL1':
+            criterion = nn.SmoothL1Loss()
+        elif self.args.criteria == 'Huber':
+            criterion = nn.HuberLoss()
+        else:
+            criterion = nn.MSELoss()
         return criterion
 
     def MAPE(self, pred, tar, eps=1e-07):
