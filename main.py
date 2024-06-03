@@ -15,7 +15,7 @@ args = dotdict()
 # basic config
 args.is_training = 1                  #  hint: status
 args.model_id = 'test'                #  hint: model id for saving
-args.model = 'FFTransformer'          #  hint: model name, options: FFTransformer, Autoformer, LSTM, MLP, Informer,
+args.model = 'LSTM'          #  hint: model name, options: FFTransformer, Autoformer, LSTM, MLP, Informer,
 #                                                          options: Transformer, LogSparse, persistence
 #                                                          And same with GraphXxxx, like: GraphTransformer, GraphLSTM, and ..
 args.plot_flag  =  1                  #  hint:  Whether to save loss plots or not
@@ -24,14 +24,14 @@ args.verbose = 1                      #  hint:  Whether to print inter-epoch los
 
 # data loader
 args.data = 'Market'                                              # hint: dataset type, Wind or WindGraph
-args.root_path = '/WindData/dataset/'          # hint:  root path of the data file
-args.data_path = 'wind_data.csv'                                # hint:  data file
+args.root_path = 'MarketDataset/dataset/'          # hint:  root path of the data file
+args.data_path = 'data.csv'                                # hint:  data file
 args.target = 'KVITEBJØRNFELTET'                                # hint:  optional target station for non-graph models
 args.freq = 'b'                                                 # hint:  freq for time features encoding:
 #                                                                      options: [ s:secondly, t:minutely, h:hourly, 
 #                                                                      options:   d:daily, b:business days, w:weekly, m:monthly]
 #                                                                      options:   You can also use more detailed freq like 15min or 3h
-args.checkpoints = './checkpoints/'                             # hint: location of model checkpoints
+args.checkpoints = 'MarketDataset/dataset/checkpoints/'                             # hint: location of model checkpoints
 args.checkpoint_flag = 1                                        # hint: Whether to checkpoint or not
 args.n_closest = None                                           # hint: number of closest nodes for graph connectivity, None --> complete graph
 args.all_stations = 0                                           # hint: Whether to use all stations or just target for non-spatial models
@@ -39,12 +39,12 @@ args.data_step = 1                                              # hint: Only use
 args.min_num_nodes = 2                                          # hint: Minimum number of nodes in a graph
 
 # forecasting task
-args.features = 'M'          # hint:  forecasting task, options:[M, S]; M:multivariate input, S:univariate input
-args.seq_len = 64            # hint: input sequence length
-args.label_len = 48          # hint: start token length. Note that Graph models only use label_len and pred_len
-args.pred_len = 6            # hint: prediction sequence length
-args.enc_in = 8              # hint: Number of encoder input features
-args.dec_in = 8              # hint: Number of decoder input features
+args.features = 'S'          # hint:  forecasting task, options:[M, S]; M:multivariate input, S:univariate input
+args.seq_len = 5             # hint: input sequence length
+args.label_len = 1           # hint: start token length. Note that Graph models only use label_len and pred_len
+args.pred_len = 1            # hint: prediction sequence length
+args.enc_in = 1              # hint: Number of encoder input features
+args.dec_in = 1              # hint: Number of decoder input features
 args.c_out = 1               # hint: output size, note that it is assumed that the target features are placed last
 
 # model define
@@ -74,16 +74,16 @@ args.num_decomp = 4                          # hint: Number of wavelet decomposi
 args.mlp_out = 0                             # hint: Whether to apply MLP to GNN outputs
 
 # Optimization
-args.num_workers = 0                  # hint: data loader num workers')
-args.itr = 1                          # hint: experiments times')
-args.train_epochs = 10                # hint: train epochs')
-args.batch_size = 32                  # hint: batch size of train input data')
-args.patience = 5                     # hint: early stopping patience')
-args.learning_rate  =  0.001          # hint: optimizer learning rate')
-args.lr_decay_rate  =  0.8            # hint: Rate for which to decay lr with')
-args.des = 'test'                     # hint:  'exp description')
-args.loss = 'mse'                     # hint:  'loss function')
-args.lradj = 'type1'                  # hint:  'adjust learning rate')
+args.num_workers = 1                  # hint: data loader num workers
+args.itr = 1                          # hint: experiments times
+args.train_epochs = 10                # hint: train epochs
+args.batch_size = 32                  # hint: batch size of train input data
+args.patience = 5                     # hint: early stopping patience
+args.learning_rate  =  0.001          # hint: optimizer learning rate
+args.lr_decay_rate  =  0.8            # hint: Rate for which to decay lr with
+args.des = 'test'                     # hint:  exp description
+args.loss = 'mse'                     # hint:  loss function
+args.lradj = 'type1'                  # hint:  adjust learning rate
 
 # GPU
 args.use_gpu  =  True          # hint: use gpu
@@ -98,9 +98,7 @@ args.devices = '0,1,2,3'            # hint: device ids of multiple gpus
 args.criteria = 'default'               # hint: kind of measure for selecting criterion, options: 'SmoothL1', 'Huber', 'L1'
 #                                            default is -> MSE   !  Cation! THe VaLUe FoR thIS PArT is CASE-SENSITIVE !
 args.kind_of_optim = 'default'          # hint: kind of optimizer to use, default is Adam
-args.name_of_col_with_date = 'date'
 args.kind_of_scale = 'MinMax'
-args.test_size = 0.2
 
 if args.features == 'S':
     assert (np.array([args.c_out, args.enc_in, args.dec_in]) == 1).all(), "c_out, enc_in and dec_in should be 1 for univariate"
@@ -113,13 +111,14 @@ if args.use_gpu and args.use_multi_gpu:
     args.device_ids = [int(id_) for id_ in device_ids]
     args.gpu = args.device_ids[0]
 
-print('Args in experiment:')
-print(args)
+
 
 Exp = Exp_Main
 
 def go_model(args, Exp):
     
+    print('Args in experiment:')
+    print(args)
     if args.is_training:
         
         for ii in range(args.itr):
