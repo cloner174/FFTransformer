@@ -21,12 +21,12 @@ args.model = 'LSTM'          #  hint: model name, options: FFTransformer, Autofo
 #                                                          options: Transformer, LogSparse, persistence
 #                                                          And same with GraphXxxx, like: GraphTransformer, GraphLSTM, and ..
 args.plot_flag  =  1                  #  hint:  Whether to save loss plots or not
-args.test_dir = ''                    #  hint:  Base dir to save test results
+args.test_dir = 'custom/'                    #  hint:  Base dir to save test results
 args.verbose = 1                      #  hint:  Whether to print inter-epoch losses
 
 # data loader
-args.data = 'Market'                                              # hint: dataset type, Wind or WindGraph
-args.root_path = 'MarketDataset/dataset/'          # hint:  root path of the data file
+args.data = 'custom'                                              # hint: dataset type, Wind or WindGraph
+args.root_path = 'custom/dataset/'          # hint:  root path of the data file
 args.data_path = 'data.csv'                                # hint:  data file
 args.target = 'Close'                                # hint:  optional target station for non-graph models
 args.scale = True
@@ -101,6 +101,6 @@ args.devices = '0,1,2,3'            # hint: device ids of multiple gpus
 args.criteria = 'default'               # hint: kind of measure for selecting criterion, options: 'SmoothL1', 'Huber', 'L1'
 #                                            default is -> MSE   !  Cation! THe VaLUe FoR thIS PArT is CASE-SENSITIVE !
 args.kind_of_optim = 'default'          # hint: kind of optimizer to use, default is Adam
-args.kind_of_scale = 'MinMax'
+args.kind_of_scaler = 'MinMax'
 
 go_model(args)
