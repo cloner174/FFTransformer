@@ -190,22 +190,25 @@ class Exp_Main(Exp_Basic):
         return total_loss
 
     def train(self, setting):
+        preds = []
+        trues = []
+        
         train_data, train_loader = self._get_data(flag='train')
-        vali_data, vali_loader = self._get_data(flag='val')     # self._get_data(flag='val')
+        #vali_data, vali_loader = self._get_data(flag='val')     # self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
 
         if 'sistence' in self.args.model:       # Check if the model is the persistence model
             criterion = self._select_criterion()
-            vali_loss = self.vali(setting, vali_data, vali_loader, criterion)
+            #vali_loss = self.vali(setting, vali_data, vali_loader, criterion)
             test_loss = self.vali(setting, test_data, test_loader, criterion)
 
             self.test('persistence_' + str(self.args.pred_len), test=0, base_dir='', save_dir='results/' + self.args.model + '/', save_flag=True)
 
-            print('vali_loss: ', vali_loss)
+            #print('vali_loss: ', vali_loss)
             print('test_loss: ', test_loss)
             assert False
 
-        self.vali_losses = []  # Store validation losses
+        self.test_losses = []  # Store validation losses
 
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path) and self.args.checkpoint_flag:
@@ -225,7 +228,7 @@ class Exp_Main(Exp_Basic):
                     start_epoch = epoch_info['epoch']
                     early_stopping.val_losses = epoch_info['val_losses']
                     early_stopping.val_loss_min = epoch_info['val_loss_min']
-                    self.vali_losses = epoch_info['val_losses']
+                    self.test_losses = epoch_info['val_losses']
                     del epoch_info
                 except:
                     start_epoch = 0
@@ -327,6 +330,17 @@ class Exp_Main(Exp_Basic):
                     batch_y = batch_y.nodes[:, -self.args.pred_len:, f_dim:].to(self.device)
                 else:
                     batch_y = batch_y[:, -self.args.pred_len:, f_dim:].to(self.device)
+                
+
+
+                pred = outputs
+                true = batch_y
+                pred = pred.detach().cpu().numpy()
+                true = true.detach().cpu().numpy()
+                
+                preds.append(pred)
+                trues.append(true)
+                
                 loss = criterion(outputs, batch_y)
                 train_loss.append(loss.item())
 
@@ -338,11 +352,7 @@ class Exp_Main(Exp_Basic):
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(setting, vali_data, vali_loader, criterion, epoch=epoch, save_path=path)
-            test_flag = False
-            if test_flag:
-                test_loss = self.vali(setting, test_data, test_loader, criterion, epoch=epoch, save_path=path)
-
+            test_loss = self.vali(setting, test_data, test_loader, criterion, epoch=epoch, save_path=path)
             # Plot the losses:
             if self.args.plot_flag and self.args.checkpoint_flag:
                 loss_save_dir = path + '/pic/train_loss.png'
@@ -353,24 +363,22 @@ class Exp_Main(Exp_Basic):
                 if 'fig_progress' not in locals():
                     fig_progress = PlotLossesSame(epoch + 1,
                                                   Training=train_loss,
-                                                  Validation=vali_loss)
+                                                  Validation=test_loss)
                 else:
                     fig_progress.on_epoch_end(Training=train_loss,
-                                              Validation=vali_loss)
+                                              Validation=test_loss)
 
                 if not os.path.exists(os.path.dirname(loss_save_dir)):
                     os.makedirs(os.path.dirname(loss_save_dir))
                 fig_progress.fig.savefig(loss_save_dir)
                 pickle.dump(fig_progress, open(loss_save_dir_pkl, 'wb'))    # To load figure that we can append to
 
-            if test_flag:
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss {4:.7f}".format(
-                    epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            else:
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss))
-            early_stopping(vali_loss, self.model, path, epoch)
-            self.vali_losses += [vali_loss]       # Append validation loss
+
+            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Test Loss {3:.7f}".format(
+                epoch + 1, train_steps, train_loss, test_loss))
+            
+            early_stopping(test_loss, self.model, path, epoch)
+            self.test_losses += [test_loss]       # Append validation loss
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
@@ -379,7 +387,19 @@ class Exp_Main(Exp_Basic):
         if self.args.checkpoint_flag:
             best_model_path = path + '/' + 'checkpoint.pth'
             self.model.load_state_dict(torch.load(best_model_path))
-
+        
+        preds = np.vstack(preds)
+        trues = np.vstack(trues)
+        print('\n')
+        print('Train shape:', preds.shape, trues.shape)
+        mae, mse, rmse, mape, _ = metric(preds, trues)
+        
+        print('Train mse:{},Train mae:{}'.format(mse, mae))
+        print('Train rmse:{},Train mape:{}'.format(rmse, mape))
+        print('\n')
+        time.sleep(2)
+        
+        
         return self.model
 
     def load_check(self, path, ignore_vars=None, ignore_paths=False):
@@ -510,6 +530,7 @@ class Exp_Main(Exp_Basic):
                     f_dim = 0
 
                 outputs = outputs[:, -self.args.pred_len:, f_dim:]
+                
                 if self.args.data == 'WindGraph':
                     batch_y = batch_y.nodes[:, -self.args.pred_len:, f_dim:].to(self.device)
                 else:
@@ -542,7 +563,7 @@ class Exp_Main(Exp_Basic):
             station_ids = np.concatenate(station_ids)
 
         print('test shape:', preds.shape, trues.shape)
-        print('test shape:', preds.shape, trues.shape)
+        #print('test shape:', preds.shape, trues.shape)
 
         # save results
         if save_flag:
@@ -606,8 +627,12 @@ class Exp_Main(Exp_Basic):
         with open(folder_path + "results_loss.txt", 'w') as f:
             for key, value in losses.items():
                 f.write('%s:%s\n' % (key, value))
-
-        print('mse:{}, mae:{}'.format(mse, mae))
+        
+        
+        print('Test mse:{},Test mae:{}'.format(mse, mae))
+        print('Test rmse:{},Test mape:{}'.format(rmse, mape))
+        print('\n')
+        time.sleep(2)
 
         np.save(folder_path + 'metrics.npy', np.array([mae, mse, rmse, mape, mspe]))
         np.save(folder_path + 'pred.npy', preds)

@@ -103,4 +103,6 @@ args.criteria = 'default'               # hint: kind of measure for selecting cr
 args.kind_of_optim = 'default'          # hint: kind of optimizer to use, default is Adam
 args.kind_of_scaler = 'MinMax'
 
+
+
 model, setting = go_model(args)

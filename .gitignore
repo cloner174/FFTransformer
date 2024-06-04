@@ -13,7 +13,7 @@ results/*
 test_results/*
 Tuning/Results/*
 Tuning/*
-
+run.ipynb
 
 # Distribution / packaging
 .Python
