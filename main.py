@@ -25,7 +25,7 @@ args.test_dir = 'custom/'                    #  hint:  Base dir to save test res
 args.verbose = 1                      #  hint:  Whether to print inter-epoch losses
 
 # data loader
-args.data = 'custom'                                              # hint: dataset type, Wind or WindGraph
+args.data = 'Custom'                                              # hint: dataset type, Wind or WindGraph
 args.root_path = 'custom/dataset/'          # hint:  root path of the data file
 args.data_path = 'data.csv'                                # hint:  data file
 args.target = 'Close'                                # hint:  optional target station for non-graph models
@@ -34,7 +34,7 @@ args.freq = 'b'                                                 # hint:  freq fo
 #                                                                      options: [ s:secondly, t:minutely, h:hourly, 
 #                                                                      options:   d:daily, b:business days, w:weekly, m:monthly]
 #                                                                      options:   You can also use more detailed freq like 15min or 3h
-args.checkpoints = 'checkpoints/'                             # hint: location of model checkpoints
+args.checkpoints = 'custom/checkpoints/'                              # hint: location of model checkpoints
 args.checkpoint_flag = 1                                        # hint: Whether to checkpoint or not
 args.n_closest = None                                           # hint: number of closest nodes for graph connectivity, None --> complete graph
 args.all_stations = 0                                           # hint: Whether to use all stations or just target for non-spatial models
@@ -103,4 +103,4 @@ args.criteria = 'default'               # hint: kind of measure for selecting cr
 args.kind_of_optim = 'default'          # hint: kind of optimizer to use, default is Adam
 args.kind_of_scaler = 'MinMax'
 
-go_model(args)
+model, setting = go_model(args)

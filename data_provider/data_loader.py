@@ -10,7 +10,7 @@ import joblib
 
 warnings.filterwarnings('ignore')
 
-class Dataset_market(Dataset):
+class Dataset_custom(Dataset):
     
     
     def __init__(self, root_path, flag='train', size=None, features='S', data_path='data.csv',

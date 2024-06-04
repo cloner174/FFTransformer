@@ -25,8 +25,8 @@ warnings.filterwarnings('ignore')
 
 #print('                                  Welcome')
 #time.sleep(1)
-#print( ' FFTransformer, Transformer family, LSTM and MLP for Time-Series Forecasting ')
-#time.sleep(1)
+print( ' FFTransformer, Transformer family, LSTM and MLP for Time-Series Forecasting ')
+time.sleep(1)
 print( '   This is the revised version of the original code, developed in 2024. ')
 
 
@@ -219,14 +219,18 @@ class Exp_Main(Exp_Basic):
         if self.args.checkpoint_flag:
             load_path = os.path.normpath(os.path.join(path, 'checkpoint.pth'))
             if os.path.exists(load_path) and self.load_check(path=os.path.normpath(os.path.join(path, 'model_setup.pickle'))):
-                self.model.load_state_dict(torch.load(load_path))
-                epoch_info = pickle.load(
-                    open(os.path.normpath(os.path.join('./checkpoints/' + setting, 'epoch_loss.pickle')), 'rb'))
-                start_epoch = epoch_info['epoch']
-                early_stopping.val_losses = epoch_info['val_losses']
-                early_stopping.val_loss_min = epoch_info['val_loss_min']
-                self.vali_losses = epoch_info['val_losses']
-                del epoch_info
+                try:
+                    self.model.load_state_dict(torch.load(load_path))
+                    epoch_info = pickle.load(
+                        open(os.path.normpath(os.path.join('custom/checkpoints/' + setting, 'epoch_loss.pickle')), 'rb'))
+                    start_epoch = epoch_info['epoch']
+                    early_stopping.val_losses = epoch_info['val_losses']
+                    early_stopping.val_loss_min = epoch_info['val_loss_min']
+                    self.vali_losses = epoch_info['val_losses']
+                    del epoch_info
+                except:
+                    start_epoch = 0
+                    print('Could not load best model')
             else:
                 start_epoch = 0
                 print('Could not load best model')
