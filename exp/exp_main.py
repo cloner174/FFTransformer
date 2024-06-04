@@ -24,11 +24,10 @@ import numpy as np
 warnings.filterwarnings('ignore')
 
 #print('                                  Welcome')
-#time.sleep(1)
 print( ' FFTransformer, Transformer family, LSTM and MLP for Time-Series Forecasting ')
 time.sleep(1)
 print( '   This is the revised version of the original code, developed in 2024. ')
-
+time.sleep(1)
 
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
