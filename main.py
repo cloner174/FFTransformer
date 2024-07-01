@@ -15,7 +15,7 @@ np.random.seed(fix_seed)
 args = dotdict()
 
 # basic config
-args.is_training = 1                  #  hint: status
+args.is_training = 1                  #  hint: statu
 args.model_id = 'test'                #  hint: model id for saving
 args.model = 'LSTM'          #  hint: model name, options: FFTransformer, Autoformer, LSTM, MLP, Informer,
 #                                                          options: Transformer, LogSparse, persistence
