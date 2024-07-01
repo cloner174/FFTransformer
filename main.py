@@ -17,7 +17,7 @@ args = dotdict()
 # basic config
 args.is_training = 1                  #  hint: statu
 args.model_id = 'test'                #  hint: model id for saving
-args.model = 'LSTM'          #  hint: model name, options: FFTransformer, Autoformer, LSTM, MLP, Informer,
+args.model = 'IndRNN'          #  hint: model name, options: FFTransformer, Autoformer, LSTM, MLP, Informer,
 #                                                          options: Transformer, LogSparse, persistence
 #                                                          And same with GraphXxxx, like: GraphTransformer, GraphLSTM, and ..
 args.plot_flag  =  1                  #  hint:  Whether to save loss plots or not

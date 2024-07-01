@@ -2,7 +2,7 @@ import layers.graphs
 from data_provider.data_factory import data_provider
 from exp.exp_basic import Exp_Basic
 from models import Informer, Autoformer, Transformer, LogSparseTransformer, FFTransformer, \
-    LSTM, MLP, persistence, GraphTransformer, GraphLSTM, GraphFFTransformer, \
+    LSTM, IndRNN, MLP, persistence, GraphTransformer, GraphLSTM, GraphFFTransformer, \
     GraphInformer, GraphLogSparse, GraphMLP, GraphAutoformer, GraphPersistence
 from utils.tools import EarlyStopping, adjust_learning_rate, visual, PlotLossesSame
 from utils.metrics import metric
@@ -23,18 +23,18 @@ import numpy as np
 
 warnings.filterwarnings('ignore')
 
-#print('                                  Welcome')
-print( ' FFTransformer, Transformer family, LSTM and MLP for Time-Series Forecasting ')
+print('                                  Welcome')
 time.sleep(1)
-print( '   This is the revised version of the original code, developed in 2024. ')
+print( '                     IndRNN for Time-Series Forecasting ')
 time.sleep(1)
+
 
 class Exp_Main(Exp_Basic):
     def __init__(self, args):
         super(Exp_Main, self).__init__(args)
         if self.args.data == 'WindGraph':
             self.args.seq_len = self.args.label_len
-
+    
     def _build_model(self):
         model_dict = {
             'Autoformer': Autoformer,
@@ -43,6 +43,7 @@ class Exp_Main(Exp_Basic):
             'LogSparse': LogSparseTransformer,
             'FFTransformer': FFTransformer,
             'LSTM': LSTM,
+            'IndRNN': IndRNN,
             'MLP': MLP,
             'persistence': persistence,
             'GraphTransformer': GraphTransformer,

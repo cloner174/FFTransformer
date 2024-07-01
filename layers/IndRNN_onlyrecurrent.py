@@ -14,16 +14,13 @@ In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition
 }
 """
 
-
 import torch
-from torch.nn import Parameter
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 import math
 
-
-class IndRNNCell_onlyrecurrent(nn.Module):
+class IndRNNCell(nn.Module):
+    
     r"""An IndRNN cell with ReLU non-linearity. This is only the recurrent part where the input is already processed with w_{ih} * x + b_{ih}.
 
     .. math::
@@ -43,25 +40,57 @@ class IndRNNCell_onlyrecurrent(nn.Module):
         - **h'** (batch, hidden_size): tensor containing the next hidden state
           for each element in the batch
     """
-
-    def __init__(self, hidden_size, 
-                 hidden_max_abs=None, recurrent_init=None):
-        super(IndRNNCell_onlyrecurrent, self).__init__()
+    def __init__(self, input_size, hidden_size, recurrent_clip_min=-1, recurrent_clip_max=-1, bias=True, activation='relu', num_layers=1, bidirectional=False):
+        
+        super(IndRNNCell, self).__init__()
+        self.input_size = input_size
         self.hidden_size = hidden_size
-        self.recurrent_init = recurrent_init
-        self.weight_hh = Parameter(torch.Tensor(hidden_size))            
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        for name, weight in self.named_parameters():
-            if "weight_hh" in name:
-                if self.recurrent_init is None:
-                    nn.init.uniform(weight, a=0, b=1)
-                else:
-                    self.recurrent_init(weight)
-
+        self.recurrent_clip_min = recurrent_clip_min
+        self.recurrent_clip_max = recurrent_clip_max
+        self.activation = getattr(F, activation)  # Allow any activation function from F
+        self.num_layers = num_layers
+        self.bidirectional = bidirectional
+        self.layers = nn.ModuleList([nn.Linear(input_size if i == 0 else hidden_size * (2 if bidirectional else 1), hidden_size) for i in range(num_layers)])
+        self.recurrent_kernels = nn.ParameterList([nn.Parameter(torch.Tensor(hidden_size)) for _ in range(num_layers)])  # Separate recurrent kernel for each layer
+        
+        # Initialize recurrent kernels
+        for recurrent_kernel in self.recurrent_kernels:
+            nn.init.uniform_(recurrent_kernel, -1, 1) 
+        if bias:
+            self.biases = nn.ParameterList([nn.Parameter(torch.Tensor(hidden_size)) for _ in range(num_layers)])
+            for bias in self.biases:
+                fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.layers[0].weight)
+                bound = 1 / math.sqrt(fan_in)
+                nn.init.uniform_(bias, -bound, bound)
+        else:
+            self.register_parameter('biases', None)
+    
     def forward(self, input, hx):
-        return F.relu(input + hx * self.weight_hh.unsqueeze(0).expand(hx.size(0), len(self.weight_hh)))
+        if self.bidirectional:
+            hx_forward, hx_backward = hx[0], hx[1]  # Split hidden states
+            outputs_forward, outputs_backward = [], []
+        for i in range(self.num_layers):
+            h = self.layers[i](input)
+            h += hx * self.recurrent_kernels[i]
+            if self.biases is not None:
+                h += self.biases[i]
+            h = torch.clamp(h, self.recurrent_clip_min, self.recurrent_clip_max)
+            h = self.activation(h)
+            input = h 
+            if self.bidirectional:
+                outputs_forward.append(h.unsqueeze(1))  # Store forward output
+                h_backward = self.layers[i](input.flip(dims=[1]))
+                h_backward += hx_backward * self.recurrent_kernels[i]
+                if self.biases is not None:
+                    h_backward += self.biases[i]
+                h_backward = torch.clamp(h_backward, self.recurrent_clip_min, self.recurrent_clip_max)
+                h_backward = self.activation(h_backward)
+                input = h_backward
+                outputs_backward.append(h_backward.unsqueeze(1))
+        if self.bidirectional:
+            return torch.cat(outputs_forward, dim=1), torch.cat(outputs_backward.flip(dims=[1]), dim=1)  
+        else:
+            return h
 
 
 class IndRNN(nn.Module):
@@ -91,63 +120,22 @@ class IndRNN(nn.Module):
         - **h_n** of shape `(n_layer, batch, hidden_size * num_directions)`: tensor
           containing the hidden state for `k = seq_len`.
     """
-    def __init__(self, input_size, hidden_size, n_layer=1, batch_norm=False, bidirectional=False, recurrent_init=None):
-        super(IndRNN, self).__init__()
-        self.hidden_size = hidden_size
-        self.n_layer = n_layer
-        self.batch_norm = batch_norm
-        self.bidirectional = bidirectional
-        # Create multiple IndRNNCell_onlyrecurrent layers
-        self.cells = nn.ModuleList([
-            IndRNNCell_onlyrecurrent(hidden_size, recurrent_init=recurrent_init)
-            for _ in range(n_layer)
-        ])
-        if self.batch_norm:
-            self.bns = nn.ModuleList([nn.BatchNorm1d(hidden_size) for _ in range(n_layer)])
-
     
-    def forward(self, input, h0=None):
-        assert input.dim() == 2 or input.dim() == 3        
-        num_directions = 2 if self.bidirectional else 1
-        if h0 is None:
-            h0 = input.data.new(self.n_layer * num_directions, input.size(-2), self.hidden_size).zero_()
-        elif (h0.size(-1) != self.hidden_size) or (h0.size(-2) != input.size(-2)) or (h0.size(0) != self.n_layer * num_directions):
-            raise RuntimeError(
-                'The initial hidden size must be equal to input_size. Expected {}, got {}'.format(
-                    (self.n_layer * num_directions, input.size(-2), self.hidden_size), h0.size()))
-        
-        # Handle packed sequence
-        is_packed = isinstance(input, nn.utils.rnn.PackedSequence)
-        if is_packed:
-            input, batch_sizes = input
-            max_batch_size = batch_sizes[0]
+    def __init__(self, input_size, hidden_size, recurrent_clip_min=-1, recurrent_clip_max=-1, bias=True, activation='relu', return_sequences=False):
+        super(IndRNN, self).__init__()
+        self.cell = IndRNNCell(input_size, hidden_size, recurrent_clip_min, recurrent_clip_max, bias, activation)
+        self.hidden_size = hidden_size
+        self.return_sequences = return_sequences
+    
+    def forward(self, input):
+        batch_size, seq_len, _ = input.size()
+        hx = torch.zeros(batch_size, self.hidden_size, device=input.device)
+        outputs = []
+        for t in range(seq_len):
+            hx = self.cell(input[:, t, :], hx)
+            if self.return_sequences:
+                outputs.append(hx.unsqueeze(1))
+        if self.return_sequences:
+            return torch.cat(outputs, dim=1), None
         else:
-            batch_sizes = None
-            max_batch_size = input.size(1)
-        
-        # For the time being, this module only supports non-bidirectional RNNs.
-        if self.bidirectional:
-            raise NotImplementedError()  # Bidirectional IndRNN not implemented in this example
-
-        # Loop through layers
-        for i in range(self.n_layer):
-            layer_input = input
-            hx_cell = h0[i] 
-            layer_outputs = []
-            for seq_idx in range(input.size(0)):
-                input_t = layer_input[seq_idx]
-                if batch_sizes is not None:
-                    input_t = input_t[:batch_sizes[seq_idx]]
-                hx_cell = self.cells[i](input_t, hx_cell)
-                if self.batch_norm:
-                    hx_cell = self.bns[i](hx_cell)
-                layer_outputs.append(hx_cell)
-            output = torch.stack(layer_outputs, 0)  # stack the outputs from the cells for each layer 
-            
-            if batch_sizes is not None:
-                output = nn.utils.rnn.PackedSequence(output, batch_sizes)
-            
-            input = output  # Prepare output for the next layer
-        if is_packed:
-            output, _ = nn.utils.rnn.pad_packed_sequence(output, batch_first=False)
-        return output  # Only return the final output from the final layer
+            return hx, None

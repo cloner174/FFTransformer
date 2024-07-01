@@ -1,79 +1,47 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-import math
-
-class IndRNNCell(nn.Module):
-    
-    def __init__(self, input_size, hidden_size, recurrent_clip_min=-1, recurrent_clip_max=-1, bias=True, activation='relu', num_layers=1, bidirectional=False):
-        
-        super(IndRNNCell, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.recurrent_clip_min = recurrent_clip_min
-        self.recurrent_clip_max = recurrent_clip_max
-        self.activation = getattr(F, activation)  # Allow any activation function from F
-        self.num_layers = num_layers
-        self.bidirectional = bidirectional
-        self.layers = nn.ModuleList([nn.Linear(input_size if i == 0 else hidden_size * (2 if bidirectional else 1), hidden_size) for i in range(num_layers)])
-        self.recurrent_kernels = nn.ParameterList([nn.Parameter(torch.Tensor(hidden_size)) for _ in range(num_layers)])  # Separate recurrent kernel for each layer
-        
-        # Initialize recurrent kernels
-        for recurrent_kernel in self.recurrent_kernels:
-            nn.init.uniform_(recurrent_kernel, -1, 1) 
-        if bias:
-            self.biases = nn.ParameterList([nn.Parameter(torch.Tensor(hidden_size)) for _ in range(num_layers)])
-            for bias in self.biases:
-                fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.layers[0].weight)
-                bound = 1 / math.sqrt(fan_in)
-                nn.init.uniform_(bias, -bound, bound)
-        else:
-            self.register_parameter('biases', None)
-    
-    def forward(self, input, hx):
-        if self.bidirectional:
-            hx_forward, hx_backward = hx[0], hx[1]  # Split hidden states
-            outputs_forward, outputs_backward = [], []
-        for i in range(self.num_layers):
-            h = self.layers[i](input)
-            h += hx * self.recurrent_kernels[i]
-            if self.biases is not None:
-                h += self.biases[i]
-            h = torch.clamp(h, self.recurrent_clip_min, self.recurrent_clip_max)
-            h = self.activation(h)
-            input = h 
-            if self.bidirectional:
-                outputs_forward.append(h.unsqueeze(1))  # Store forward output
-                h_backward = self.layers[i](input.flip(dims=[1]))
-                h_backward += hx_backward * self.recurrent_kernels[i]
-                if self.biases is not None:
-                    h_backward += self.biases[i]
-                h_backward = torch.clamp(h_backward, self.recurrent_clip_min, self.recurrent_clip_max)
-                h_backward = self.activation(h_backward)
-                input = h_backward
-                outputs_backward.append(h_backward.unsqueeze(1))
-        if self.bidirectional:
-            return torch.cat(outputs_forward, dim=1), torch.cat(outputs_backward.flip(dims=[1]), dim=1)  
-        else:
-            return h
+from layers.IndRNN_EncDec import Encoder, Decoder
+from layers.Embed import DataEmbedding
+import random
 
 
-class IndRNN(nn.Module):
-    def __init__(self, input_size, hidden_size, recurrent_clip_min=-1, recurrent_clip_max=-1, bias=True, activation='relu', return_sequences=False):
-        super(IndRNN, self).__init__()
-        self.cell = IndRNNCell(input_size, hidden_size, recurrent_clip_min, recurrent_clip_max, bias, activation)
-        self.hidden_size = hidden_size
-        self.return_sequences = return_sequences
+class Model(nn.Module):
+    """
+    IndRNN in Encoder-Decoder
+    """
+    def __init__(self, configs):
+        super(Model, self).__init__()
+        self.d_model = configs.d_model
+        self.enc_layers = configs.e_layers
+        self.dec_layers = configs.d_layers
+        self.seq_len = configs.seq_len
+        self.pred_len = configs.pred_len
+        self.label_len = configs.label_len
+        self.output_size = configs.c_out
+        assert configs.label_len >= 1
+        self.enc_embedding = DataEmbedding(configs.enc_in, configs.d_model, configs.embed, configs.freq,
+                                           configs.dropout, kernel_size=configs.kernel_size, pos_embed=False)
+        self.encoder = Encoder(d_model=self.d_model, num_layers=self.enc_layers, dropout=configs.dropout)
+        self.decoder = Decoder(output_size=configs.c_out, d_model=self.d_model,
+                               dropout=configs.dropout, num_layers=self.dec_layers)
     
-    def forward(self, input):
-        batch_size, seq_len, _ = input.size()
-        hx = torch.zeros(batch_size, self.hidden_size, device=input.device)
-        outputs = []
-        for t in range(seq_len):
-            hx = self.cell(input[:, t, :], hx)
-            if self.return_sequences:
-                outputs.append(hx.unsqueeze(1))
-        if self.return_sequences:
-            return torch.cat(outputs, dim=1), None
+    def forward(self, x_enc, x_mark_enc, x_dec, x_mark_dec, teacher_forcing_ratio=None, batch_y=None, **_):
+        enc_out = self.enc_embedding(x_enc, x_mark_enc)
+        enc_out, enc_hid = self.encoder(enc_out)
+        if self.enc_layers != self.dec_layers:
+            assert self.dec_layers <= self.enc_layers
+            enc_hid = [hid[-self.dec_layers:, ...] for hid in enc_hid]
+        dec_inp = x_dec[:, -(self.pred_len + 1), -self.output_size:]
+        dec_hid = enc_hid
+        outputs = torch.zeros((x_enc.shape[0], self.pred_len, self.output_size)).to(enc_out.device)
+        if not self.training:
+            for t in range(self.pred_len):
+                dec_out, dec_hid = self.decoder(dec_inp, dec_hid)
+                outputs[:, t, :] = dec_out
+                dec_inp = dec_out
         else:
-            return hx, None
+            for t in range(self.pred_len):
+                dec_out, dec_hid = self.decoder(dec_inp, dec_hid)
+                outputs[:, t, :] = dec_out
+                dec_inp = dec_out
+        return outputs  # [B, L, D]
