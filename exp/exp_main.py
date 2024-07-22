@@ -325,10 +325,10 @@ class Exp_Main(Exp_Basic):
                 pickle.dump(fig_progress, open(loss_save_dir_pkl, 'wb'))    # To load figure that we can append to
 
             if test_flag:
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss {4:.7f}".format(
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Test Loss: {3:.7f} Test Loss {4:.7f}".format(
                     epoch + 1, train_steps, train_loss, vali_loss, test_loss))
             else:
-                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
+                print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Test Loss: {3:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss))
             early_stopping(vali_loss, self.model, path, epoch)
             self.vali_losses += [vali_loss]       # Append validation loss

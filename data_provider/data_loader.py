@@ -10,11 +10,11 @@ import torch
 warnings.filterwarnings('ignore')
 
 
-class Dataset_wind_data(Dataset):
-    def __init__(self, root_path, flag='train', size=None, features='S', data_path='wind_data.csv',
-                 target='KVITEBJØRNFELTET', scale=True, timeenc=0, freq='10min', all_stations=False, data_step=5, **_):
+class Dataset_data(Dataset):
+    def __init__(self, root_path, flag='train', size=None, features='S', data_path='df.csv',
+                 target='Close', scale=False, timeenc=0, freq='b', all_stations=False, data_step=5, **_):
 
-        self.all_stations = all_stations        # Weather to use all the stations or only specific ones.
+        #self.all_stations = all_stations        # Weather to use all the stations or only specific ones.
 
         self.seq_len = size[0]          # S (notation used in paper)
         self.label_len = size[1]        # L
@@ -42,24 +42,24 @@ class Dataset_wind_data(Dataset):
         self.__read_data__()
 
     def __read_data__(self):
-        self.scaler = StandardScaler()
+        self.scaler = MinMaxScaler()
         _path = os.path.join(self.root_path, self.flag, self.data_path).replace('\\', '/')  # replace in case windows
-        df_raw = pd.read_csv(_path, header=[0, 1])
+        df_raw = pd.read_csv(_path)
 
         # Get the indices for the different stations
-        self._stations = {s: i for i, s in enumerate(df_raw.columns.get_level_values(1).unique())}
+        #self._stations = {s: i for i, s in enumerate(df_raw.columns.get_level_values(1).unique())}
 
         # Fit scaler based on training data only
         if self.flag != 'train':
-            train_data = pd.read_csv(_path.replace(self.flag, 'train'), header=[0, 1])
-
+            train_data = pd.read_csv(_path.replace(self.flag, 'train'))
+        
         if self.features == 'M' or self.features == 'MS':
-            cols_data = df_raw.columns[df_raw.columns.get_level_values(0) != 'time']
+            cols_data = list(df_raw.columns[df_raw.columns.get_level_values(0) != 'date'])
             df_data = df_raw[cols_data]
-            assert (df_raw.columns.get_level_values(0).unique()[-1:] == ['wind_speed']).all()
+            #assert (df_raw.columns.unique()[-1:] == ['wind_speed']).all()
         elif self.features == 'S':
-            cols_data = df_raw.columns[df_raw.columns.get_level_values(0) == 'wind_speed']
-            df_data = df_raw[cols_data]
+            cols_data = [self.target]
+            df_data = df_raw[[self.target]]
 
         # Only keep the relevant columns also for the training data (for which we perform scaling):
         if self.flag != 'train':
@@ -67,21 +67,21 @@ class Dataset_wind_data(Dataset):
 
         # Currently scaling based on all stations, but could be changed to scale just using the target.
         if self.scale:
-            self.cols_meas = df_data.stack().columns
+            self.cols_meas = df_data.columns
             if self.flag != 'train':
-                self.scaler.fit(train_data.stack().values)
+                self.scaler.fit(train_data.values)
                 del train_data      # Free up memory as train_data is no longer needed.
             else:
                 self.scaler.fit(df_data.stack().values)
             # [Samples, meas, stations]
-            data = df_data.values.reshape(df_data.shape[0], df_data.columns.get_level_values(0).nunique(), -1)
+            data = df_data.values.reshape(df_data.shape[0], df_data.columns.nunique(), -1)
             data = np.stack([self.scaler.transform(data[..., i]) for i in range(data.shape[-1])], -1)
         else:
-            data = df_data.values.reshape(df_data.shape[0], df_data.columns.get_level_values(0).nunique(), -1)
+            data = df_data.values.reshape(df_data.shape[0], df_data.columns.nunique(), -1)
 
-        if not self.all_stations:
-            data = data[..., self._stations[self.target]]
-            data = np.expand_dims(data, -1)
+        #if not self.all_stations:
+        #    data = data[..., self._stations[self.target]]
+        #    data = np.expand_dims(data, -1)
 
         # Find missing entries to then decide on valid sequences (which don't contain NaNs)
         nan_indxs = [np.where(np.isnan(data[..., i]).any(axis=1))[0] for i in range(data.shape[-1])]
@@ -105,10 +105,10 @@ class Dataset_wind_data(Dataset):
         self.data_indxs = np.stack(data_indxs, -1)
 
         # Construct the time array
-        assert df_raw[['time']].all(0).all()
-        df_stamp = df_raw[['time']].iloc[:, :1]     # [border1:border2]
-        df_stamp.columns = ['time']
-        df_stamp['time'] = pd.to_datetime(df_stamp.time)
+        assert df_raw[['date']].all(0).all()
+        df_stamp = df_raw[['date']].iloc[:, :1]     # [border1:border2]
+        df_stamp.columns = ['date']
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
             df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
@@ -116,9 +116,9 @@ class Dataset_wind_data(Dataset):
             df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
             df_stamp['minute'] = df_stamp.date.apply(lambda row: row.minute, 1)
             df_stamp['minute'] = df_stamp.minute.map(lambda x: x // 10)
-            data_stamp = df_stamp.drop(['time'], 1).values
+            data_stamp = df_stamp.drop(['time'], axis=1).values
         elif self.timeenc == 1:
-            data_stamp = time_features(pd.to_datetime(df_stamp['time'].values), freq=self.freq)
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
             data_stamp = data_stamp.transpose(1, 0)
         else:
             raise ValueError("Pass timeenc as either 0 or 1")
@@ -148,13 +148,17 @@ class Dataset_wind_data(Dataset):
         return seq_x, seq_y, seq_x_mark, seq_y_mark
 
     def __len__(self):
-        if not self.all_stations:
-            return len(self.valid_indxs)
-        else:
+        #if not self.all_stations:
+        #    return len(self.valid_indxs)
+        #else:
             return self.data_indxs[self.valid_indxs, :].sum()
 
     # Assumes inputs of shape [nodes, seq, feats] or [seq, feats]
     def inverse_transform(self, data):
+        if not self.scale:
+            return data
+        else:
+            pass
         num_input_feats = data.shape[-1]
         if num_input_feats != len(self.scaler.scale_):
             data = np.concatenate([np.zeros([*data.shape[:-1], len(self.scaler.scale_) - data.shape[-1]]), data], -1)
@@ -197,22 +201,22 @@ class Dataset_wind_data_graph(Dataset):
 
         # If we want to only consider a subset of the stations. Just change the names to change the stations we want
         # to consider or None if we want to predict for all stations.
-        if subset:
-            self.subset = [
-                'SNORREA',
-                'SNORREB',
-                'VISUNDFELTET',
-                'KVITEBJØRNFELTET',
-                'HULDRAFELTET',
-                'VESLEFRIKKA',
-                'OSEBERGC',
-                'BRAGE',
-                'OSEBERGSØR',
-                'TROLLB',
-                'GJØAFELTET'
-            ]
-        else:
-            self.subset = None
+        #if subset:
+        #    self.subset = [
+        #        'SNORREA',
+        #        'SNORREB',
+        #        'VISUNDFELTET',
+        #        'KVITEBJØRNFELTET',
+        #        'HULDRAFELTET',
+        #        'VESLEFRIKKA',
+        #        'OSEBERGC',
+        # #       'BRAGE',
+        ##        'OSEBERGSØR',
+        #        'TROLLB',
+        #        'GJØAFELTET'
+        #    ]
+        #else:
+        self.subset = None
 
         self.root_path = root_path
         self.data_path = data_path
@@ -221,15 +225,15 @@ class Dataset_wind_data_graph(Dataset):
     def __read_data__(self):
         self.scaler = StandardScaler()
         _path = os.path.join(self.root_path, self.flag, self.data_path).replace('\\', '/')  # replace in case windows
-        df_raw = pd.read_csv(_path, header=[0, 1])
+        df_raw = pd.read_csv(_path)
 
         # Get the indices for the different stations
-        self._stations = {s: i for i, s in enumerate(df_raw.columns.get_level_values(1).unique())}
-        self._stations_inv = {v: k for k, v in self._stations.items()}
+        #self._stations = {s: i for i, s in enumerate(df_raw.columns.get_level_values(1).unique())}
+        #self._stations_inv = {v: k for k, v in self._stations.items()}
 
         # Load the static edge features:
         edge_feats = pd.read_csv(os.path.join(self.root_path, 'edge_feats.csv').replace('\\', '/'),
-                                 header=[0, 1], index_col=0)
+                                 index_col=0)
         station_info = pd.read_csv(os.path.join(self.root_path, 'station_info.csv').replace('\\', '/'))
         station_info = station_info[['id', 'lat', 'lon', 'name']]
         station_info['name'] = station_info['name'].apply(lambda x: x.replace(' ', ''))
@@ -239,7 +243,7 @@ class Dataset_wind_data_graph(Dataset):
 
         # Fit scaler on training data
         if self.flag != 'train':
-            train_data = pd.read_csv(_path.replace(self.flag, 'train'), header=[0, 1])
+            train_data = pd.read_csv(_path.replace(self.flag, 'train'))
 
         if self.features == 'M' or self.features == 'MS':
             cols_data = df_raw.columns[df_raw.columns.get_level_values(0) != 'time']
@@ -267,9 +271,9 @@ class Dataset_wind_data_graph(Dataset):
         else:
             data = df_data.values.reshape(df_data.shape[0], df_data.columns.get_level_values(0).nunique(), -1)
 
-        if self.subset is not None:
-            subset_indxs = [self._stations[s] for s in self.subset]
-            data = data[..., subset_indxs]
+        #if self.subset is not None:
+        #    subset_indxs = [self._stations[s] for s in self.subset]
+        #    data = data[..., subset_indxs]
 
         # Find missing entries to then decide on valid sequences (which don't contain NaNs)
         nan_indxs = [np.where(np.isnan(data[..., i]).any(axis=1))[0] for i in range(data.shape[-1])]
@@ -318,20 +322,20 @@ class Dataset_wind_data_graph(Dataset):
 
         # Find the n_closest number of nodes for every node. Use euclidean distance from scaled distances.
         if self.n_closest is not None:
-            sub_station_info = self.station_info[self.station_info['name'].isin(self.subset)] if self.subset is not None else self.station_info
+            #sub_station_info = self.station_info[self.station_info['name'].isin(self.subset)] if self.subset is not None else self.station_info
             latlon_scaler = MinMaxScaler()
-            latlon_scaler.fit(sub_station_info[['lat', 'lon']].values)
-            sub_station_info[['slat', 'slon']] = latlon_scaler.transform(sub_station_info[['lat', 'lon']].values)
+            #latlon_scaler.fit(sub_station_info[['lat', 'lon']].values)
+            #sub_station_info[['slat', 'slon']] = latlon_scaler.transform(sub_station_info[['lat', 'lon']].values)
 
             connectivity = {}
-            for i, row_i in sub_station_info.iterrows():
-                dists = np.array(sub_station_info.apply(
-                    lambda row: np.sqrt((row['slat'] - row_i.slat) ** 2 + (row['slon'] - row_i.slon) ** 2),
-                    axis=1).to_list())
-                connectivity[row_i['name']] = sub_station_info.name.iloc[np.argsort(dists)].values
-            connectivity = pd.DataFrame(connectivity)
-            self.connectivity = connectivity.apply(lambda col: col.map(self._stations), axis=0)
-            self.connectivity.columns = [self._stations[st] for st in self.connectivity.columns]
+            #for i, row_i in sub_station_info.iterrows():
+            #    dists = np.array(sub_station_info.apply(
+            #        lambda row: np.sqrt((row['slat'] - row_i.slat) ** 2 + (row['slon'] - row_i.slon) ** 2),
+            #        axis=1).to_list())
+            #    connectivity[row_i['name']] = sub_station_info.name.iloc[np.argsort(dists)].values
+            #connectivity = pd.DataFrame(connectivity)
+            #self.connectivity = connectivity.apply(lambda col: col.map(self._stations), axis=0)
+            #self.connectivity.columns = [self._stations[st] for st in self.connectivity.columns]
 
             self.connectivity = [
                 self.connectivity.columns.values,
@@ -341,23 +345,23 @@ class Dataset_wind_data_graph(Dataset):
         edge_feats = []
         senders = []
         receivers = []
-        for rec_i, stat_i in enumerate(self._stations.keys()):
-            info_i = self.station_info[self.station_info['name'] == stat_i]
-            for send_i, stat_j in enumerate(self._stations.keys()):
-                receivers.append(rec_i)
-                senders.append(send_i)
-                info_j = self.station_info[self.station_info['name'] == stat_j]
-                dlat = info_i.lat.iloc[0] - info_j.lat.iloc[0]
-                dlon = info_i.lon.iloc[0] - info_j.lon.iloc[0]
-                edge_feats.append([dlat, dlon])
+        #for rec_i, stat_i in enumerate(self._stations.keys()):
+        #    info_i = self.station_info[self.station_info['name'] == stat_i]
+        #    for send_i, stat_j in enumerate(self._stations.keys()):
+        #        receivers.append(rec_i)
+        #        senders.append(send_i)
+        #        info_j = self.station_info[self.station_info['name'] == stat_j]
+        #        dlat = info_i.lat.iloc[0] - info_j.lat.iloc[0]
+        #        dlon = info_i.lon.iloc[0] - info_j.lon.iloc[0]
+        #        edge_feats.append([dlat, dlon])
 
-        self.graph_struct = {
-            'nodes': None,      # [NxSxD]
-            'edges': np.array(edge_feats),          # [N2x2]
-            'senders': np.array(senders),           # [N2,]
-            'receivers': np.array(receivers),       # [N2,]
-            'station_names': self._stations.keys(),
-        }
+        #self.graph_struct = {
+        #    'nodes': None,      # [NxSxD]
+        #    'edges': np.array(edge_feats),          # [N2x2]
+        #    'senders': np.array(senders),           # [N2,]
+        #    'receivers': np.array(receivers),       # [N2,]
+        #    'station_names': self._stations.keys(),
+        #}
 
     def __getitem__(self, index):
         s_begin = self.valid_indxs[index]
@@ -370,11 +374,11 @@ class Dataset_wind_data_graph(Dataset):
         seq_x = self.data_x[s_begin:s_end, :, stations]
         seq_y = self.data_x[r_begin:r_end, :, stations]
 
-        if self.subset is not None:
-            station_names = np.array(self.subset)[stations]
-            stations = np.array([self._stations[s] for s in station_names])
-        else:
-            station_names = [self._stations_inv[i] for i in stations]
+        #if self.subset is not None:
+        #    station_names = np.array(self.subset)[stations]
+        #    stations = np.array([self._stations[s] for s in station_names])
+        #else:
+        #    station_names = [self._stations_inv[i] for i in stations]
 
         if self.n_closest is not None:
             def my_func(col):
@@ -408,14 +412,14 @@ class Dataset_wind_data_graph(Dataset):
             'edges': edge_feats,                     # [N2x2]
             'senders': senders,                      # [N2,]
             'receivers': receivers,                  # [N2,]
-            'station_names': station_names,
+        #    'station_names': station_names,
         }
         graph_y = {
             'nodes': seq_y.transpose(2, 0, 1),      # [NxSxD]
             'edges': np.array(edge_feats),          # [N2x2]
             'senders': np.array(senders),           # [N2,]
             'receivers': np.array(receivers),       # [N2,]
-            'station_names': station_names,
+        #    'station_names': station_names,
         }
 
         seq_x_mark = self.data_stamp[s_begin:s_end]
